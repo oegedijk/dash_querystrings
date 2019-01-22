@@ -3,101 +3,15 @@ from dash.dependencies import Input, Output, State
 import dash_html_components as html
 import dash_core_components as dcc
 
-from urllib.parse import urlparse, parse_qs, urlencode
-
-import ast
-
+# to set the DataPickerRange start/end dates:
 from datetime import datetime, date, timedelta
 
+# to generate the tinyurl:
 from pyshorteners import Shortener
 
-def encode_state(component_ids_zipped, values):
-    """
-    return a urlencoded string that encodes the current state of the app
-    (as identified by (component_ids, params)+values
-
-    First encodes as a list of tuples of tuples of :
-    (component_id, (parameter, value))
-
-    This then gets encoded by urlencode as two separate querystring parameters
-    e.g. ('tabs', ('value', 'tab1')) will get encoded as:
-          ?tabs=value&tabs=tab1
-    """
-
-    statelist = [(component_ids_zipped[0][i],
-                    (component_ids_zipped[1][i],
-                    values[i]))
-                    for i in range(len(values))
-                    if  values[i] is not None]
-
-    params = urlencode(statelist,  doseq=True)
-    return f'?{params}'
-
-
-def parse_state(url):
-    """
-    Returns a dict that summarizes the state of the app at the time that the
-    querystring url was generated.
-
-    The querystring parameters come in pairs (see above), e.g.:
-              ?tabs=value&tabs=cs_tab
-
-    This will then be encoded as dictionary with the component_id as key
-    (e.g. 'tabs') and a list (param, value) pairs (e.g. ('value', 'cs_tab')
-    for that component_id as the item.
-
-    lists (somewhat hackily detected by the first char=='['), get evaluated
-    using ast.
-
-    Numbers are appropriately cast as either int or float.
-    """
-
-    parse_result = urlparse(url)
-
-    statedict = parse_qs(parse_result.query)
-    if statedict:
-        for key, value in statedict.items():
-            statedict[key] = list(map(list, zip(value[0::2], value[1::2])))
-            # go through every parsed value pv and check whether it is a list
-            # or a number and cast appropriately:
-            for pv in statedict[key]:
-                # if it's a list
-                if isinstance(pv[1], str) and pv[1][0]=='[':
-                    pv[1] = ast.literal_eval(pv[1])
-
-                #if it's a number
-                if (isinstance(pv[1], str) and
-                    pv[1].lstrip('-').replace('.','',1).isdigit()):
-
-                    if pv[1].isdigit():
-                        pv[1] = int(pv[1])
-                    else:
-                        pv[1] = float(pv[1])
-    else: #return empty dict
-        statedict = dict()
-    return statedict
-
-
-def apply_value_from_querystring(params):
-    """
-    Funky function wrapper that looks up the component_id in the
-    querystring parameter statedict `params`, and if it finds it, loops
-    through the (param, value) combinations in the (item) list
-    and assign the right value to the right parameter.
-
-    Every component that is saved in the querystring needs to be wrapped
-    in this function in order for the saved parameters to be assigned
-    during loading.
-    """
-    def wrapper(func):
-        def apply_value(*args, **kwargs):
-            if 'id' in kwargs and kwargs['id'] in params:
-                param_values = params[kwargs['id']]
-                for pv in param_values:
-                    kwargs[pv[0]] = pv[1]
-            return func(*args, **kwargs)
-        return apply_value
-    return wrapper
+from querystring_methods import encode_state
+from querystring_methods import parse_state
+from querystring_methods import apply_value_from_querystring
 
 app = dash.Dash(__name__)
 
@@ -143,6 +57,8 @@ def build_layout(params):
         html.Div(id='tiny_url')
     ])
 
+# List of component (id, parameter) tuples. Can be be any parameter
+# not just (., 'value'), and the value van be either a single value or a list:
 component_ids = [
     ('country_radiobutton', 'value'),
     ('club_multidropdown', 'value'),
@@ -150,6 +66,8 @@ component_ids = [
     ('submit-button', 'n_clicks')
 ]
 
+# Turn the list of 4 (id, param) tuples into a list of
+# one component id tuple (len=4) and one parameter tuple (len=4):
 component_ids_zipped= list(zip(*component_ids))
 
 @app.callback(Output('page-layout', 'children'),
@@ -168,12 +86,23 @@ def page_load(href):
 @app.callback(Output('url', 'search'),
               inputs=[Input(id, param) for (id, param) in component_ids])
 def update_url_state(*values):
+    """
+    When any of the (id, param) values changes, this callback gets triggered.
+
+    Passes the list of component id's, the list of component parameters
+    (zipped together in component_ids_zipped), and the value to encode_state()
+    and return a properly formed querystring.
+    """
     return encode_state(component_ids_zipped, values)
 
 @app.callback(
     Output('country_output', 'children'),
     [Input('country_radiobutton', 'value')])
 def country_callback(country):
+    """
+    Display the country selected by `country_radiobutton` in the
+    `country_output` html.Div:
+    """
     return f'Country selected: {country}'
 
 
@@ -183,6 +112,10 @@ def country_callback(country):
     [State('club_multidropdown', 'value'),
      State('datepicker', 'start_date')])
 def club_callback(n_clicks, clubs, startdate):
+    """
+    Display the clubs selected in `club_multidropdown` and the start_date
+    of the `datepicker` in the `club_output` html.Div:
+    """
     if n_clicks > 0:
         return f"""Clubs Selected: {str(clubs)}
                    Starting date: {str(startdate)}"""
@@ -192,6 +125,9 @@ def club_callback(n_clicks, clubs, startdate):
               [Input('tinyurl-button', 'n_clicks')],
               [State('url', 'search')])
 def page_load(n_clicks, state):
+    """
+    Return a tinyurl whenever the `tinyurl-button` is clicked:
+    """
     if not state:
         return "No url to shorten"
     if n_clicks > 0 and state:
