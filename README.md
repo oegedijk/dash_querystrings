@@ -3,7 +3,8 @@
 Natively Dash (dash.plot.ly) does not support saving the state in the url.
 
 This is unfortunate, as when you are creating a dashboard of some kind you
-often want your users to be able to share it easily.
+often want your users to be able to share it easily. The easiest way to do this
+is by making shareable urls that conserve and recreate the state of the dash app.
 
 This code shows an example how you can save the state of a Dash app in
 the querystring, and then reload the state of the app from a given url.
